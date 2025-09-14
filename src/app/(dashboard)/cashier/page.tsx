@@ -3,6 +3,7 @@ import { useState } from "react";
 import { IoClose } from "react-icons/io5";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 type MenuItem = {
   id: number;
@@ -150,6 +151,8 @@ export default function CashierDashboard() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const { data: session } = useSession();
 
@@ -190,6 +193,62 @@ export default function CashierDashboard() {
     const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
   });
+
+  const handleConfirmPayment = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/sales/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: `ORD-${Date.now()}`,
+          cashierId: session.user.id,
+          cashier: session.user.username,
+          items: cart.map(item => ({
+            productId: String(item.id),
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+          })),
+          totalAmount: total,
+          paymentMethod: "cash",
+          status: "completed",
+        }),
+      });
+
+      if (!response.ok) {
+        // Try to parse JSON error, fallback to generic message
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData?.error || errorMessage;
+        } catch (err) {
+          console.warn("No JSON body in error response", err);
+        }
+        throw new Error(errorMessage);
+      }
+
+      // Try to parse JSON response, fallback to null
+      let result = null;
+      try {
+        result = await response.json();
+      } catch {
+        // if no JSON body, ignore
+        result = null;
+      }
+
+      setCart([]);
+      setShowConfirm(false);
+      toast.success("Payment confirmed & sale recorded!");
+    } catch (err) {
+      console.error(err);
+      const errorMessage =
+        err instanceof Error ? err.message : "Unknown error occurred";
+      toast.error(`Error confirming payment: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="grid grid-cols-7 gap-6 h-full p-3">
@@ -335,12 +394,55 @@ export default function CashierDashboard() {
               <span>Total</span>
               <span>${total.toFixed(2)}</span>
             </div>
-            <Button className="mt-2 w-full py-2 rounded-lg text-white font-semibold transition">
+            <Button
+              className="mt-2 w-full py-2 rounded-lg text-white font-semibold transition"
+              onClick={() => setShowConfirm(true)}>
               Confirm Payment
             </Button>
           </div>
         </div>
       </div>
+      {/* Confirm Modal */}
+      {showConfirm && (
+        <div className="fixed inset-0 backdrop-blur flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
+            <h2 className="text-lg font-bold mb-4">Confirm Payment</h2>
+            {cart.length === 0 ? (
+              <p className="text-gray-500 mb-4">Cart is empty</p>
+            ) : (
+              <div className="mb-4 space-y-2">
+                {cart.map(item => (
+                  <div key={item.id} className="flex justify-between text-sm">
+                    <span>
+                      {item.name} × {item.quantity}
+                    </span>
+                    <span>${(item.price * item.quantity).toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="border-t mt-2 pt-2 flex justify-between font-bold">
+                  <span>Total</span>
+                  <span>${total.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowConfirm(false)}
+                disabled={loading}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-primary text-white"
+                onClick={handleConfirmPayment}
+                disabled={loading}>
+                {loading ? "Processing..." : "Confirm"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
