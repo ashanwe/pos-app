@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "sonner";
-import Navbar from "@/components/Navbar";
 import Providers from "@/components/Providers"; // we'll make this client-only
 
 export const metadata: Metadata = {

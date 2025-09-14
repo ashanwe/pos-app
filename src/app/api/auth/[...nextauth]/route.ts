@@ -8,6 +8,7 @@ import type { User as NextAuthUser } from "next-auth";
 const handler = NextAuth({
   session: {
     strategy: "jwt",
+    maxAge: 24 * 60 * 60, // 24 hours
   },
   providers: [
     CredentialsProvider({
@@ -18,32 +19,41 @@ const handler = NextAuth({
       },
       async authorize(credentials): Promise<NextAuthUser | null> {
         if (!credentials?.username || !credentials?.password) {
-          return null;
+          throw new Error("Missing credentials");
         }
 
-        await connectToDatabase();
+        try {
+          await connectToDatabase();
 
-        const user = await User.findOne({
-          username: credentials.username.toLowerCase(),
-        });
+          const user = await User.findOne({
+            username: credentials.username.toLowerCase(),
+          });
 
-        if (!user) return null;
+          if (!user) {
+            throw new Error("User not found");
+          }
 
-        const isValidPassword = await bcrypt.compare(
-          credentials.password,
-          user.password as string
-        );
+          const isValidPassword = await bcrypt.compare(
+            credentials.password,
+            user.password as string
+          );
 
-        if (!isValidPassword) return null;
+          if (!isValidPassword) {
+            throw new Error("Invalid password");
+          }
 
-        // Return user object that matches your extended User interface
-        return {
-          id: user.id.toString(), // or user.id if that's your field
-          firstName: user.firstName,
-          lastName: user.lastName,
-          username: user.username,
-          role: user.role,
-        };
+          // Return user object that matches your extended User interface
+          return {
+            id: user.id.toString(),
+            firstName: user.firstName,
+            lastName: user.lastName,
+            username: user.username,
+            role: user.role,
+          };
+        } catch (error) {
+          console.error("Authorization error:", error);
+          return null;
+        }
       },
     }),
   ],
